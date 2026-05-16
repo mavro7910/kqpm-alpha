@@ -1,11 +1,7 @@
 ﻿"""
 utils/ai_client.py
 
-AI 시그널 분석 — 뉴스 + 애널리스트 데이터 기반
-- 퀀트 컨텍스트 제거 (별도 탭에서 담당)
-- 뉴스 본문 품질 강화 (Marketaux snippet 400자)
-- 애널리스트 데이터 다중 소스 수집
-- 스마트 캐시 유지
+AI 시그널 분석 — Naver Open API 뉴스 + Naver Finance 시세 기반.
 """
 
 from __future__ import annotations
@@ -13,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
+from datetime import date
 
 import streamlit as st
 
@@ -35,32 +31,37 @@ def has_api_key() -> bool:
     k = get_api_key()
     return bool(k and len(k) > 10)
 
-def get_finnhub_key() -> str | None:
-    return st.session_state.get("finnhub_api_key") or None
+def get_naver_client_id() -> str | None:
+    return st.session_state.get("naver_client_id") or None
 
-def set_finnhub_key(key: str):
-    st.session_state["finnhub_api_key"] = key.strip()
+def set_naver_client_id(key: str):
+    st.session_state["naver_client_id"] = key.strip()
 
-def clear_finnhub_key():
-    st.session_state.pop("finnhub_api_key", None)
+def get_naver_client_secret() -> str | None:
+    return st.session_state.get("naver_client_secret") or None
 
-def has_finnhub_key() -> bool:
-    k = get_finnhub_key()
-    return bool(k and len(k) > 5)
+def set_naver_client_secret(key: str):
+    st.session_state["naver_client_secret"] = key.strip()
 
-def get_marketaux_key() -> str | None:
-    return st.session_state.get("marketaux_api_key") or None
+def clear_naver_keys():
+    st.session_state.pop("naver_client_id", None)
+    st.session_state.pop("naver_client_secret", None)
 
-def set_marketaux_key(key: str):
-    st.session_state["marketaux_api_key"] = key.strip()
+def has_naver_keys() -> bool:
+    return bool(get_naver_client_id() and get_naver_client_secret())
 
-def clear_marketaux_key():
-    st.session_state.pop("marketaux_api_key", None)
+def get_dart_key() -> str | None:
+    return st.session_state.get("dart_api_key") or None
 
-def has_marketaux_key() -> bool:
-    k = get_marketaux_key()
-    return bool(k and len(k) > 5)
+def set_dart_key(key: str):
+    st.session_state["dart_api_key"] = key.strip()
 
+def clear_dart_key():
+    st.session_state.pop("dart_api_key", None)
+
+def has_dart_key() -> bool:
+    key = get_dart_key()
+    return bool(key and len(key) >= 20)
 
 # ─────────────────────────────────────────────
 # 키 검증
@@ -74,70 +75,19 @@ def validate_api_key(api_key: str) -> tuple[bool, str | None]:
         return False, "키가 너무 짧습니다."
     return True, None
 
-def validate_finnhub_key(api_key: str) -> tuple[bool, str | None]:
-    key = api_key.strip()
-    if len(key) < 10:
-        return False, "키가 너무 짧습니다."
+def validate_naver_keys(client_id: str, client_secret: str) -> tuple[bool, str | None]:
+    if len(client_id.strip()) < 5:
+        return False, "Naver Client ID가 너무 짧습니다."
+    if len(client_secret.strip()) < 5:
+        return False, "Naver Client Secret이 너무 짧습니다."
     return True, None
 
-def validate_marketaux_key(api_key: str) -> tuple[bool, str | None]:
-    key = api_key.strip()
-    if len(key) < 10:
-        return False, "키가 너무 짧습니다."
+def validate_dart_key(api_key: str) -> tuple[bool, str | None]:
+    if len(api_key.strip()) < 20:
+        return False, "DART API 키가 너무 짧습니다."
     return True, None
 
-
-# ─────────────────────────────────────────────
-# 애널리스트 데이터 수집
-# ─────────────────────────────────────────────
-
-def _fetch_analyst_finnhub(ticker: str, finnhub_key: str) -> dict:
-    """Finnhub에서 투자의견·목표주가 수집."""
-    import requests
-    data = {}
-    headers = {"X-Finnhub-Token": finnhub_key}
-    base = "https://finnhub.io/api/v1"
-    try:
-        # 목표주가
-        r = requests.get(f"{base}/stock/price-target",
-                         params={"symbol": ticker}, headers=headers, timeout=5)
-        pt = r.json()
-        if pt.get("targetMean") and float(pt["targetMean"]) > 0:
-            data["target_mean"] = float(pt["targetMean"])
-            data["target_high"] = float(pt.get("targetHigh") or 0) or None
-            data["target_low"]  = float(pt.get("targetLow")  or 0) or None
-            data["n_analysts"]  = pt.get("numberOfAnalysts")
-    except Exception:
-        pass
-    try:
-        # 투자의견
-        r = requests.get(f"{base}/stock/recommendation",
-                         params={"symbol": ticker}, headers=headers, timeout=5)
-        recs = r.json()
-        if recs and isinstance(recs, list):
-            latest = recs[0]
-            sb = int(latest.get("strongBuy",  0) or 0)
-            b  = int(latest.get("buy",        0) or 0)
-            h  = int(latest.get("hold",       0) or 0)
-            s  = int(latest.get("sell",       0) or 0)
-            ss = int(latest.get("strongSell", 0) or 0)
-            total = sb + b + h + s + ss
-            if total > 0:
-                data["n_analysts"] = data.get("n_analysts") or total
-                if sb / total > 0.4:
-                    data["rec_key"] = "STRONG_BUY"
-                elif (sb + b) / total > 0.5:
-                    data["rec_key"] = "BUY"
-                elif (s + ss) / total > 0.4:
-                    data["rec_key"] = "SELL"
-                else:
-                    data["rec_key"] = "HOLD"
-    except Exception:
-        pass
-    return data
-
-
-def fetch_analyst_data(tickers: list[str], finnhub_key: str | None = None) -> dict[str, dict]:
+def fetch_analyst_data(tickers: list[str]) -> dict[str, dict]:
     """
     투자의견/목표주가는 국내 종목에서 안정적인 공개 API가 제한적이므로 best-effort로 비워둡니다.
     현재가는 네이버 금융 시세로 보완합니다.
@@ -168,114 +118,69 @@ def fetch_analyst_data(tickers: list[str], finnhub_key: str | None = None) -> di
 # 뉴스 수집
 # ─────────────────────────────────────────────
 
-def _fetch_finnhub(ticker: str, finnhub_key: str) -> tuple[list[dict], float | None]:
+def _strip_html(value: str) -> str:
+    value = re.sub(r"<.*?>", " ", value or "")
+    value = value.replace("&quot;", '"').replace("&amp;", "&")
+    value = value.replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _fetch_naver_openapi_news(
+    ticker: str,
+    client_id: str | None,
+    client_secret: str | None,
+) -> list[dict]:
+    if not client_id or not client_secret:
+        return []
+
     import requests
-    headers    = {"X-Finnhub-Token": finnhub_key}
-    articles   = []
-    change_pct = None
 
     try:
+        from core.data import fetch_name
+        name = fetch_name(ticker) or ticker
+        query = f"{name} {ticker} 주가"
         r = requests.get(
-            "https://finnhub.io/api/v1/quote",
-            params={"symbol": ticker}, headers=headers, timeout=5,
-        )
-        d    = r.json()
-        curr = d.get("c", 0)
-        prev = d.get("pc", 0)
-        if prev and prev > 0:
-            change_pct = round((curr - prev) / prev * 100, 2)
-    except Exception:
-        pass
-
-    try:
-        today     = date.today()
-        from_date = (today - timedelta(days=3)).isoformat()
-        r = requests.get(
-            "https://finnhub.io/api/v1/company-news",
-            params={"symbol": ticker, "from": from_date, "to": today.isoformat()},
-            headers=headers, timeout=5,
-        )
-        for item in r.json()[:3]:
-            headline = item.get("headline", "")
-            summary  = item.get("summary", "")
-            source   = item.get("source", "")
-            if headline:
-                articles.append({
-                    "title":      headline,
-                    "snippet":    summary[:400] if summary else "",
-                    "highlights": [],
-                    "source":     source,
-                    "sentiment":  None,
-                })
-    except Exception:
-        pass
-
-    return articles, change_pct
-
-
-def _fetch_marketaux(ticker: str, marketaux_key: str) -> list[dict]:
-    import requests
-    articles = []
-
-    try:
-        r = requests.get(
-            "https://api.marketaux.com/v1/news/all",
-            params={
-                "symbols":         ticker,
-                "filter_entities": "true",
-                "language":        "en",
-                "limit":           3,
-                "published_after": (date.today() - timedelta(days=3)).isoformat(),
-                "api_token":       marketaux_key,
+            "https://openapi.naver.com/v1/search/news.json",
+            params={"query": query, "display": 5, "sort": "date"},
+            headers={
+                "X-Naver-Client-Id": client_id,
+                "X-Naver-Client-Secret": client_secret,
             },
             timeout=8,
         )
         if r.status_code != 200:
             return []
-
-        for art in r.json().get("data", [])[:3]:
-            title   = art.get("title", "")
-            desc    = art.get("description", "")
-            snippet = art.get("snippet", "")
-            source  = art.get("source", "")
-
-            sentiment       = None
-            highlight_texts = []
-            for ent in art.get("entities", []):
-                if ent.get("symbol", "").upper() == ticker.upper():
-                    sentiment = ent.get("sentiment_score")
-                    for h in ent.get("highlights", [])[:2]:
-                        txt = h.get("highlight", "").strip()
-                        if txt:
-                            highlight_texts.append(txt)
-                    break
-
-            # 본문: snippet 우선, 없으면 description
-            body = snippet[:400] if snippet else (desc[:300] if desc else "")
-
+        articles = []
+        for item in r.json().get("items", [])[:5]:
+            title = _strip_html(item.get("title", ""))
+            desc = _strip_html(item.get("description", ""))
             if title:
                 articles.append({
-                    "title":      title,
-                    "snippet":    body,
-                    "highlights": highlight_texts,
-                    "source":     source,
-                    "sentiment":  round(sentiment, 2) if sentiment is not None else None,
+                    "title": title,
+                    "snippet": desc[:400],
+                    "highlights": [],
+                    "source": "Naver News",
+                    "url": item.get("originallink") or item.get("link"),
+                    "sentiment": None,
                 })
+        return articles
     except Exception:
-        pass
-
-    return articles
+        return []
 
 
-def _fetch_naver_fallback(ticker: str) -> tuple[list[dict], float | None]:
+def _fetch_naver_fallback(
+    ticker: str,
+    naver_client_id: str | None = None,
+    naver_client_secret: str | None = None,
+) -> tuple[list[dict], float | None]:
     try:
         from core.data import fetch_ohlcv
-        articles = []
+        articles = _fetch_naver_openapi_news(ticker, naver_client_id, naver_client_secret)
         change_pct = None
         hist = fetch_ohlcv(ticker, period="10d")
         if len(hist) >= 2:
-            prev = float(hist["종가"].iloc[-2])
-            curr = float(hist["종가"].iloc[-1])
+            prev = float(hist["Close"].iloc[-2])
+            curr = float(hist["Close"].iloc[-1])
             if prev > 0:
                 change_pct = round((curr - prev) / prev * 100, 2)
 
@@ -286,67 +191,28 @@ def _fetch_naver_fallback(ticker: str) -> tuple[list[dict], float | None]:
 
 def fetch_ticker_data(
     ticker: str,
-    finnhub_key: str | None,
-    marketaux_key: str | None,
+    naver_client_id: str | None = None,
+    naver_client_secret: str | None = None,
 ) -> tuple[list[dict], float | None, dict]:
     """
-    뉴스+시세 수집.
+    Naver Open API 뉴스 + Naver Finance 시세 수집.
 
     Returns:
         (articles, change_pct, api_status)
         api_status: {
-            "finnhub":   "ok" | "skip" | "fail" | "no_data",
-            "marketaux": "ok" | "skip" | "fail" | "no_data",
             "naver":     "ok" | "skip" | "fail" | "no_data",
         }
     """
-    finnhub_articles:   list[dict] = []
-    marketaux_articles: list[dict] = []
-    change_pct: float | None = None
-
     api_status: dict[str, str] = {
-        "finnhub":   "skip" if not finnhub_key   else "pending",
-        "marketaux": "skip" if not marketaux_key else "pending",
-        "naver":     "skip",
+        "naver":     "pending",
     }
-
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        futures = {}
-        if finnhub_key:
-            futures["finnhub"]   = ex.submit(_fetch_finnhub,   ticker, finnhub_key)
-        if marketaux_key:
-            futures["marketaux"] = ex.submit(_fetch_marketaux, ticker, marketaux_key)
-
-        for name, fut in futures.items():
-            try:
-                if name == "finnhub":
-                    finnhub_articles, change_pct = fut.result()
-                    api_status["finnhub"] = "ok" if finnhub_articles or change_pct is not None else "no_data"
-                else:
-                    marketaux_articles = fut.result()
-                    api_status["marketaux"] = "ok" if marketaux_articles else "no_data"
-            except Exception:
-                api_status[name] = "fail"
-
-    if not finnhub_articles and not marketaux_articles:
-        api_status["naver"] = "pending"
-        nv_articles, nv_change = _fetch_naver_fallback(ticker)
-        if nv_articles or nv_change is not None:
-            api_status["naver"] = "ok"
-        else:
-            api_status["naver"] = "no_data"
-        return nv_articles, nv_change, api_status
-
-    # Marketaux 우선, Finnhub 보완 (제목 중복 제거)
-    seen:   set[str]   = set()
-    merged: list[dict] = []
-    for art in marketaux_articles + finnhub_articles:
-        key = art["title"][:40].lower()
-        if key not in seen:
-            seen.add(key)
-            merged.append(art)
-
-    return merged[:4], change_pct, api_status
+    try:
+        articles, change_pct = _fetch_naver_fallback(ticker, naver_client_id, naver_client_secret)
+        api_status["naver"] = "ok" if articles or change_pct is not None else "no_data"
+        return articles, change_pct, api_status
+    except Exception:
+        api_status["naver"] = "fail"
+        return [], None, api_status
 
 
 # ─────────────────────────────────────────────
@@ -356,16 +222,15 @@ def fetch_ticker_data(
 _SYSTEM_PROMPT = """당신은 한국 주식 및 국내 상장 ETF 포트폴리오 분석 AI입니다.
 
 [분석 기준]
-- 뉴스와 애널리스트 데이터를 근거로 판단합니다
-- 뉴스가 없으면 애널리스트 데이터만으로 판단하고, 뉴스 내용을 추측하거나 창작하지 마세요
-- 애널리스트 데이터도 없으면 "정보 부족으로 판단 유보"라고 명시하세요
-- 상충하는 신호(예: 강력매수인데 현재가가 목표가 상회, 어닝 임박인데 직전 EPS 미스)가 있으면 반드시 언급하세요
+- 네이버 뉴스와 네이버 Finance 가격 변화를 근거로 판단합니다
+- 뉴스가 없으면 "최근 유의미한 뉴스 없음"이라고 명시하고, 뉴스 내용을 추측하거나 창작하지 마세요
+- 투자의견·목표가·실적 일정은 제공된 경우에만 언급하세요
 - 액션은 구체적 조건과 함께 제시하세요. "비중 유지" 단독 사용 금지
 - JSON 배열만 응답하세요. 코드블록, 설명 텍스트 절대 없이
 
 [signal 판정 — 반드시 준수]
-- up: 호재 뉴스 AND 애널리스트 긍정이 동시에 있을 때만
-- down: 악재 뉴스 AND 애널리스트 부정이 동시에 있을 때만
+- up: 명확한 호재 뉴스와 긍정적 가격 흐름이 함께 있을 때만
+- down: 명확한 악재 뉴스와 부정적 가격 흐름이 함께 있을 때만
 - neutral: 위 두 조건에 해당하지 않는 모든 경우 (뉴스 없음, 혼재, 한쪽만 있음, 단순 등락)
 - 확신이 없으면 neutral. neutral이 가장 흔한 정상 상태임"""
 
@@ -619,8 +484,8 @@ def _needs_reanalysis(
 def analyze_portfolio_signals(
     holdings: dict[str, float],
     api_key: str,
-    finnhub_key: str | None = None,
-    marketaux_key: str | None = None,
+    naver_client_id: str | None = None,
+    naver_client_secret: str | None = None,
     progress_callback=None,
     portfolio=None,
     cached_results: list[dict] | None = None,
@@ -642,7 +507,12 @@ def analyze_portfolio_signals(
 
     with ThreadPoolExecutor(max_workers=min(10, total)) as executor:
         futures = {
-            executor.submit(fetch_ticker_data, t, finnhub_key, marketaux_key): t
+            executor.submit(
+                fetch_ticker_data,
+                t,
+                naver_client_id,
+                naver_client_secret,
+            ): t
             for t in tickers
         }
         for future in as_completed(futures):
@@ -653,13 +523,13 @@ def analyze_portfolio_signals(
                 api_status_map[t] = api_status
             except Exception:
                 data_map[t]       = ([], None)
-                api_status_map[t] = {"finnhub": "fail", "marketaux": "fail", "naver": "fail"}
+                api_status_map[t] = {"naver": "fail"}
 
     # ── 2단계: 애널리스트 데이터 수집 ───────────────────────────
     if progress_callback:
         progress_callback(0, total, "애널리스트 데이터 수집 중", None)
 
-    analyst_ctx = fetch_analyst_data(tickers, finnhub_key=finnhub_key)
+    analyst_ctx = fetch_analyst_data(tickers)
 
     # ── 3단계: 스마트 캐시 분리 ─────────────────────────────────
     cached_map: dict[str, dict] = {}

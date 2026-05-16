@@ -185,3 +185,16 @@ class Portfolio:
     def set_logo(self, ticker: str, url: str | None):
         if url:
             self.logos[ticker] = url
+
+    # ── 종목명 캐시 ──────────────────────────────────────────────────
+
+    @property
+    def names(self) -> dict:
+        return self._data.setdefault("names", {})
+
+    def get_name(self, ticker: str) -> str | None:
+        return self.names.get(ticker)
+
+    def set_name(self, ticker: str, name: str | None):
+        if name:
+            self.names[ticker] = name

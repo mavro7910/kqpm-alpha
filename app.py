@@ -89,20 +89,22 @@ if not st.session_state.get("_qpm_theme_loaded", False):
 
 # ── API 키 자동 로드 ──────────────────────────────────────
 from utils.ai_client import (
-    has_api_key, set_api_key, has_finnhub_key, set_finnhub_key,
-    has_marketaux_key, set_marketaux_key,
+    has_api_key, set_api_key, has_naver_keys,
+    set_naver_client_id, set_naver_client_secret,
+    has_dart_key, set_dart_key,
 )
-from core.secrets_store import load_api_key, load_finnhub_key, load_marketaux_key
+from core.secrets_store import load_api_key, load_naver_keys, load_dart_key
 
 if not has_api_key():
     _k, _ = load_api_key(_file_key)
     if _k: set_api_key(_k)
-if not has_finnhub_key():
-    _k, _ = load_finnhub_key(_file_key)
-    if _k: set_finnhub_key(_k)
-if not has_marketaux_key():
-    _k, _ = load_marketaux_key(_file_key)
-    if _k: set_marketaux_key(_k)
+if not has_naver_keys():
+    (_naver_id, _naver_secret), _ = load_naver_keys(_file_key)
+    if _naver_id: set_naver_client_id(_naver_id)
+    if _naver_secret: set_naver_client_secret(_naver_secret)
+if not has_dart_key():
+    _dart_key, _ = load_dart_key(_file_key)
+    if _dart_key: set_dart_key(_dart_key)
 
 
 # ── 헤더 ─────────────────────────────────────────────────

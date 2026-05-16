@@ -258,6 +258,7 @@ def _render_sell_result(portfolio, top_n_sell):
         )
         sell_rows = [{
             "로고": portfolio.get_logo(t),
+            "종목명": portfolio.get_name(t) or t,
             "티커": t,
             f"Top{top_n_v} 진입 (일)": int(in_top_n[t]),
             "최고 순위": int(best_rank[t]),
@@ -286,6 +287,7 @@ def _render_sell_result(portfolio, top_n_sell):
         )
         watch_rows = [{
             "로고": portfolio.get_logo(t),
+            "종목명": portfolio.get_name(t) or t,
             "티커": t,
             f"Top{top_n_v} 진입 (일)": int(in_top_n[t]),
             "진입률 (%)": round(in_top_n[t] / total_days * 100, 1),

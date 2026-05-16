@@ -167,6 +167,7 @@ def render(portfolio: Portfolio):
         diff_krw       = diff_shares * curr_price
 
         rows_rb.append({
+            "종목명":          portfolio.get_name(t) or t,
             "티커":            t,
             "현재가 (KRW)":    curr_price if curr_price > 0 else None,
             "보유 수량":       curr_shares,
@@ -343,6 +344,7 @@ def render(portfolio: Portfolio):
                 amount = abs(float(row["조정 금액 (KRW)"]))
                 shares = abs(int(row["조정 수량"]))
                 ticker = row["티커"]
+                display_name = row.get("종목명") or ticker
                 logo_url = portfolio.get_logo(ticker)
                 if logo_url:
                     icon_html = (
@@ -358,8 +360,8 @@ def render(portfolio: Portfolio):
 <div class="qpm-trade-card">
   {icon_html}
   <div style="min-width:0">
-    <div class="qpm-trade-ticker">{ticker}</div>
-    <div class="qpm-trade-meta">현재 {current_w:.1f}% → 목표 {target_w:.1f}%</div>
+    <div class="qpm-trade-ticker">{display_name}</div>
+    <div class="qpm-trade-meta">{ticker} · 현재 {current_w:.1f}% → 목표 {target_w:.1f}%</div>
     <div class="qpm-weight-bar">
       <span class="qpm-weight-current" style="width:{current_bar:.1f}%"></span>
       <span class="qpm-weight-target" style="width:{target_bar:.1f}%"></span>

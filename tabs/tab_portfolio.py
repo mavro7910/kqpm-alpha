@@ -6,7 +6,7 @@ import streamlit as st
 
 from core.data import fetch_name, fetch_prices_and_fx
 from core.portfolio import Portfolio
-from utils.ai_client import get_finnhub_key, has_finnhub_key, get_api_key, has_api_key
+from utils.ai_client import get_api_key, has_api_key
 from utils.ui import (
     section_title, metric_card, banner, TEAL, TEAL_LIGHT, TEAL_DARK,
     TEXT, TEXT_SUB, TEXT_MUTED, BORDER, SURFACE, SURFACE_DIM, RED, RED_LIGHT,
@@ -92,6 +92,19 @@ def render(portfolio: Portfolio):
     def inv(*keys):
         for k in keys:
             st.session_state.pop(k, None)
+
+    def ensure_names():
+        updated = False
+        for t in portfolio.tickers():
+            if portfolio.get_name(t):
+                continue
+            name = fetch_name(t)
+            if name:
+                portfolio.set_name(t, name)
+                updated = True
+        if updated:
+            portfolio.save()
+        st.session_state["ticker_names"] = {t: portfolio.get_name(t) or t for t in portfolio.tickers()}
 
     def render_management(expanded: bool = False):
         with st.expander("종목 관리", expanded=expanded):
@@ -225,6 +238,8 @@ def render(portfolio: Portfolio):
         render_management(expanded=True)
         return
 
+    ensure_names()
+
     st.markdown(section_title("보유 종목 현황"), unsafe_allow_html=True)
 
     prices_cache = st.session_state.get("prices_data")
@@ -250,6 +265,9 @@ def render(portfolio: Portfolio):
                 for t in portfolio.tickers():
                     name = fetch_name(t)
                     names[t] = name or t
+                    if name:
+                        portfolio.set_name(t, name)
+                portfolio.save()
                 st.session_state["ticker_names"] = names
     with col_auto:
         _saved_auto = portfolio.get_setting("auto_refresh_prices", False)
@@ -304,7 +322,7 @@ def render(portfolio: Portfolio):
 """, unsafe_allow_html=True)
 
     # ── 종목 리스트 (HTML) — 상위 3개 + 더보기 ─────────────────
-    names_map = st.session_state.get("ticker_names", {})
+    names_map = st.session_state.get("ticker_names", portfolio.names)
     def _holding_value(item):
         t, s = item
         if prices_map is None:
@@ -331,12 +349,13 @@ def render(portfolio: Portfolio):
         name_str  = names_map.get(t, "")
         price_str = f"₩{p:,.0f}" if p else "—"
         val_str   = f"₩{val:,.0f}" if val else "—"
+        display_name = name_str or t
         return f"""
 <div class="qpm-stock-row">
   {logo_html}
   <div style="flex:1;min-width:0">
-    <div class="qpm-stock-ticker">{t}</div>
-    <div class="qpm-stock-shares">{int(s):,}주{" · " + name_str if name_str else ""}</div>
+    <div class="qpm-stock-ticker">{display_name}</div>
+    <div class="qpm-stock-shares">{t} · {int(s):,}주</div>
   </div>
   <div class="qpm-stock-price" style="text-align:right;flex-shrink:0">
     <div class="qpm-stock-price-main">{price_str}</div>

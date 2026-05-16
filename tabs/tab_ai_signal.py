@@ -21,12 +21,12 @@ from core.portfolio import Portfolio
 from utils.ai_client import (
     analyze_portfolio_signals,
     get_api_key, has_api_key, set_api_key,
-    get_finnhub_key, set_finnhub_key, has_finnhub_key,
-    get_marketaux_key, set_marketaux_key, has_marketaux_key,
+    get_naver_client_id, set_naver_client_id,
+    get_naver_client_secret, set_naver_client_secret, has_naver_keys,
 )
 from core.secrets_store import (
     load_api_key, load_signal_cache, save_signal_cache,
-    load_finnhub_key, load_marketaux_key,
+    load_naver_keys,
 )
 
 
@@ -72,15 +72,12 @@ def _set_cached(uid: str, data: list):
 # ─────────────────────────────────────────────
 
 def render(portfolio: Portfolio, file_key: str):
-    if not has_finnhub_key():
-        stored_fh, _ = load_finnhub_key(file_key)
-        if stored_fh:
-            set_finnhub_key(stored_fh)
-
-    if not has_marketaux_key():
-        stored_mx, _ = load_marketaux_key(file_key)
-        if stored_mx:
-            set_marketaux_key(stored_mx)
+    if not has_naver_keys():
+        (client_id, client_secret), _ = load_naver_keys(file_key)
+        if client_id:
+            set_naver_client_id(client_id)
+        if client_secret:
+            set_naver_client_secret(client_secret)
 
     if not has_api_key():
         stored, err = load_api_key(file_key)
@@ -130,6 +127,16 @@ def render(portfolio: Portfolio, file_key: str):
             '설정 탭에서 API 키를 입력하세요.<br>'
             '<a href="https://aistudio.google.com/app/apikey" target="_blank" '
             'style="color:#f0a862">Google AI Studio에서 무료 발급 →</a>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    if not has_naver_keys():
+        st.markdown(
+            '<div class="warn-banner">'
+            '🔑 <b>Naver Open API 키가 필요합니다.</b><br>'
+            '설정 탭에서 Client ID와 Client Secret을 입력하면 네이버 뉴스 검색 API로 종목 뉴스를 수집합니다.'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -224,14 +231,7 @@ def _run_analysis(portfolio: Portfolio, file_key: str, force_full: bool = False)
         pct = int(current / total * 100) if total > 0 else 0
         progress_bar.progress(pct)
         if ticker == "데이터 수집 중":
-            sources = []
-            if has_finnhub_key():
-                sources.append("Finnhub")
-            if has_marketaux_key():
-                sources.append("Marketaux")
-            if not sources:
-                sources.append("Naver Finance")
-            status_text.markdown(f"📡 **{'+'.join(sources)}**으로 **{total}개 종목** 데이터 수집 중...")
+            status_text.markdown(f"📡 **Naver Open API + Naver Finance**로 **{total}개 종목** 데이터 수집 중...")
         elif ticker == "퀀트 지표 계산 중":
             status_text.markdown("📊 **퀀트 지표** 계산 중 (모멘텀/변동성/52주)...")
         elif ticker == "AI 분석 중":
@@ -247,8 +247,8 @@ def _run_analysis(portfolio: Portfolio, file_key: str, force_full: bool = False)
         results = analyze_portfolio_signals(
             holdings=holdings,
             api_key=api_key,
-            finnhub_key=get_finnhub_key(),
-            marketaux_key=get_marketaux_key(),
+            naver_client_id=get_naver_client_id(),
+            naver_client_secret=get_naver_client_secret(),
             progress_callback=on_progress,
             portfolio=portfolio,
             cached_results=cached_results,
@@ -290,7 +290,7 @@ def _run_analysis(portfolio: Portfolio, file_key: str, force_full: bool = False)
 
 def _render_api_status(signals: list[dict]):
     """
-    각 종목별 데이터 소스(Finnhub / Marketaux / Naver Finance) 호출 결과를
+    각 종목별 Naver 데이터 소스 호출 결과를
     접을 수 있는 패널로 표시합니다.
     """
     if not signals:
@@ -298,8 +298,6 @@ def _render_api_status(signals: list[dict]):
 
     # 전체 소스 집계
     source_stats: dict[str, dict[str, int]] = {
-        "finnhub":   {"ok": 0, "no_data": 0, "fail": 0, "skip": 0},
-        "marketaux": {"ok": 0, "no_data": 0, "fail": 0, "skip": 0},
         "naver":     {"ok": 0, "no_data": 0, "fail": 0, "skip": 0},
     }
 
@@ -310,7 +308,7 @@ def _render_api_status(signals: list[dict]):
             continue
         ticker = item.get("ticker", "?")
         row = {"ticker": ticker}
-        for src in ("finnhub", "marketaux", "naver"):
+        for src in ("naver",):
             s = status.get(src, "skip")
             row[src] = s
             source_stats[src][s] = source_stats[src].get(s, 0) + 1
@@ -334,7 +332,7 @@ def _render_api_status(signals: list[dict]):
             return f"🟡 {src.capitalize()} — {nd}개 데이터 없음"
         return f"🟢 {src.capitalize()} — {ok}/{total_used} 성공"
 
-    summary_badges = [_badge(src) for src in ("finnhub", "marketaux", "naver")]
+    summary_badges = [_badge(src) for src in ("naver",)]
 
     with st.expander("📡 데이터 소스 상태 확인 (클릭하여 펼치기)", expanded=False):
         # 전체 요약
@@ -363,8 +361,6 @@ def _render_api_status(signals: list[dict]):
         for row in ticker_rows:
             df_rows.append({
                 "티커":       row["ticker"],
-                "Finnhub":   _STATUS_ICON.get(row.get("finnhub", "skip"), "—"),
-                "Marketaux": _STATUS_ICON.get(row.get("marketaux", "skip"), "—"),
                 "Naver":     _STATUS_ICON.get(row.get("naver", "skip"), "—"),
             })
 

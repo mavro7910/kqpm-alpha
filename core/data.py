@@ -1,11 +1,11 @@
 """
 core/data.py
 
-Korean market data layer.
+Korean market data layer for KQPM Alpha.
 
-The app keeps the original public function names so the Streamlit workflow stays
-the same, but prices now come from Naver Finance's Korean stock/ETF endpoints.
-All prices are KRW and the returned FX rate is intentionally fixed at 1.0.
+Naver does not expose this as a formal public stock API, but Naver Finance's
+chart endpoint is widely used for Korean stock/ETF daily OHLCV data. This
+module wraps that endpoint behind stable app-facing helpers.
 """
 
 from __future__ import annotations
@@ -21,6 +21,16 @@ NAVER_CHART_URL = "https://api.finance.naver.com/siseJson.naver"
 NAVER_ITEM_URL = "https://finance.naver.com/item/main.naver"
 KRW_FX_RATE = 1.0
 MARKET_BENCHMARK = "069500"  # KODEX 200
+
+NAVER_COLUMNS = {
+    "날짜": "Date",
+    "시가": "Open",
+    "고가": "High",
+    "저가": "Low",
+    "종가": "Close",
+    "거래량": "Volume",
+    "외국인소진율": "ForeignRatio",
+}
 
 _SESSION = requests.Session()
 _SESSION.headers.update(
@@ -51,6 +61,7 @@ def _period_start(period: str) -> date:
     match = re.fullmatch(r"(\d+)([dmy])", str(period).strip().lower())
     if not match:
         return today - timedelta(days=365 * 3 + 30)
+
     amount = int(match.group(1))
     unit = match.group(2)
     if unit == "d":
@@ -61,30 +72,33 @@ def _period_start(period: str) -> date:
 
 
 def _parse_naver_chart(text: str) -> pd.DataFrame:
-    cleaned = re.sub(r"^\s*|\s*$", "", text or "")
+    cleaned = (text or "").strip()
     if not cleaned:
         return pd.DataFrame()
+
+    # The endpoint returns a JavaScript-style list and sometimes leaves a
+    # trailing comma before the closing bracket.
     cleaned = re.sub(r",\s*\]", "]", cleaned)
     try:
         rows = ast.literal_eval(cleaned)
-    except Exception as exc:
+    except (SyntaxError, ValueError) as exc:
         raise ValueError("네이버 금융 응답을 해석하지 못했습니다.") from exc
 
     if not rows or len(rows) < 2:
         return pd.DataFrame()
 
     header = [str(x).strip() for x in rows[0]]
-    body = rows[1:]
-    df = pd.DataFrame(body, columns=header)
+    df = pd.DataFrame(rows[1:], columns=header)
     if "날짜" not in df.columns or "종가" not in df.columns:
         return pd.DataFrame()
 
-    df["날짜"] = pd.to_datetime(df["날짜"], format="%Y%m%d", errors="coerce")
-    for col in ("시가", "고가", "저가", "종가", "거래량"):
+    df = df.rename(columns=NAVER_COLUMNS)
+    df["Date"] = pd.to_datetime(df["Date"], format="%Y%m%d", errors="coerce")
+    for col in ("Open", "High", "Low", "Close", "Volume", "ForeignRatio"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["날짜", "종가"]).set_index("날짜").sort_index()
-    return df
+
+    return df.dropna(subset=["Date", "Close"]).set_index("Date").sort_index()
 
 
 def fetch_ohlcv(
@@ -104,6 +118,7 @@ def fetch_ohlcv(
         "endTime": end_date.strftime("%Y%m%d"),
         "timeframe": "day",
     }
+
     try:
         res = _SESSION.get(NAVER_CHART_URL, params=params, timeout=10)
         res.raise_for_status()
@@ -111,6 +126,7 @@ def fetch_ohlcv(
         raise ValueError(
             f"네이버 금융 시세 조회 실패: {symbol}. 네트워크 또는 네이버 금융 접근 상태를 확인하세요."
         ) from exc
+
     return _parse_naver_chart(res.text)
 
 
@@ -121,9 +137,9 @@ def fetch_name(ticker: str) -> str | None:
         res = _SESSION.get(NAVER_ITEM_URL, params={"code": symbol}, timeout=6)
         res.raise_for_status()
         res.encoding = "euc-kr"
-        m = re.search(r'<div class="wrap_company">\s*<h2[^>]*>(.*?)</h2>', res.text, re.S)
-        if m:
-            return re.sub(r"<.*?>", "", m.group(1)).strip()
+        match = re.search(r'<div class="wrap_company">\s*<h2[^>]*>(.*?)</h2>', res.text, re.S)
+        if match:
+            return re.sub(r"<.*?>", "", match.group(1)).strip()
     except Exception:
         return None
     return None
@@ -137,22 +153,25 @@ def fetch_market_cap(ticker: str) -> float | None:
         res.raise_for_status()
         res.encoding = "euc-kr"
         text = re.sub(r"\s+", " ", res.text)
-        m = re.search(r"시가총액</em>\s*</th>\s*<td[^>]*>\s*<em[^>]*>([\d,]+)</em>\s*억원", text)
-        if not m:
+        match = re.search(
+            r"시가총액</em>\s*</th>\s*<td[^>]*>\s*<em[^>]*>([\d,]+)</em>\s*억원",
+            text,
+        )
+        if not match:
             return None
-        return float(m.group(1).replace(",", "")) * 100_000_000
+        return float(match.group(1).replace(",", "")) * 100_000_000
     except Exception:
         return None
 
 
 def extract_close(raw: pd.DataFrame) -> pd.DataFrame:
-    """Compatibility helper: extract close prices from Naver OHLCV data."""
+    """Compatibility helper: extract close prices from OHLCV data."""
     if raw is None or raw.empty:
         return pd.DataFrame()
-    if "종가" in raw.columns:
-        return raw[["종가"]].rename(columns={"종가": "Close"})
     if "Close" in raw.columns:
         return raw[["Close"]]
+    if "종가" in raw.columns:
+        return raw[["종가"]].rename(columns={"종가": "Close"})
     return raw
 
 
@@ -162,7 +181,7 @@ def fetch_last_close(ticker: str, period: str = "10d") -> float | None:
         df = fetch_ohlcv(ticker, period=period)
         if df.empty:
             return None
-        close = df["종가"].dropna()
+        close = df["Close"].dropna()
         return float(close.iloc[-1]) if not close.empty else None
     except Exception:
         return None
@@ -181,13 +200,13 @@ def fetch_close_matrix(
         try:
             df = fetch_ohlcv(ticker, period=period, start=start, end=end)
             if not df.empty:
-                frames[ticker] = df["종가"].rename(ticker)
+                frames[ticker] = df["Close"].rename(ticker)
         except Exception as exc:
             errors.append(f"{ticker}: {exc}")
 
     if not frames:
         detail = "; ".join(errors[:3]) if errors else "데이터 없음"
-        raise ValueError(f"유효한 국장 티커가 없습니다. {detail}")
+        raise ValueError(f"유효한 국장 데이터가 없습니다. {detail}")
     return pd.concat(frames.values(), axis=1).sort_index()
 
 

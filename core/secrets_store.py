@@ -2,7 +2,7 @@
 core/secrets_store.py
 
 - API 키들: AES-256-GCM 암호화 → user_secrets 테이블
-  저장 형식: {"gemini": "AIza...", "finnhub": "d1abc..."}
+  저장 형식: {"gemini": "AIza...", "naver_client_id": "...", "naver_client_secret": "...", "dart": "..."}
 - 시그널 캐시: signal_cache 테이블 (날짜별)
 """
 
@@ -111,25 +111,45 @@ def delete_gemini_key(uid: str) -> tuple[bool, str | None]:
 
 
 # ─────────────────────────────────────────────
-# Finnhub 키
+# Naver Open API 키
 # ─────────────────────────────────────────────
 
-def load_finnhub_key(uid: str) -> tuple[str | None, str | None]:
+def load_naver_keys(uid: str) -> tuple[tuple[str | None, str | None], str | None]:
     keys, err = _load_keys_dict(uid)
-    return keys.get("finnhub"), err
+    return (keys.get("naver_client_id"), keys.get("naver_client_secret")), err
 
-def save_finnhub_key(uid: str, key: str) -> tuple[bool, str | None]:
+def save_naver_keys(uid: str, client_id: str, client_secret: str) -> tuple[bool, str | None]:
     keys, _ = _load_keys_dict(uid)
-    keys["finnhub"] = key
+    keys["naver_client_id"] = client_id
+    keys["naver_client_secret"] = client_secret
     return _save_keys_dict(uid, keys)
 
-def delete_finnhub_key(uid: str) -> tuple[bool, str | None]:
+def delete_naver_keys(uid: str) -> tuple[bool, str | None]:
     keys, _ = _load_keys_dict(uid)
-    keys.pop("finnhub", None)
+    keys.pop("naver_client_id", None)
+    keys.pop("naver_client_secret", None)
     return _save_keys_dict(uid, keys)
 
 
 # ─────────────────────────────────────────────
+# OpenDART 키
+# ─────────────────────────────────────────────
+
+def load_dart_key(uid: str) -> tuple[str | None, str | None]:
+    keys, err = _load_keys_dict(uid)
+    return keys.get("dart"), err
+
+def save_dart_key(uid: str, key: str) -> tuple[bool, str | None]:
+    keys, _ = _load_keys_dict(uid)
+    keys["dart"] = key
+    return _save_keys_dict(uid, keys)
+
+def delete_dart_key(uid: str) -> tuple[bool, str | None]:
+    keys, _ = _load_keys_dict(uid)
+    keys.pop("dart", None)
+    return _save_keys_dict(uid, keys)
+
+
 # 시그널 캐시
 # ─────────────────────────────────────────────
 
@@ -168,25 +188,6 @@ def save_signal_cache(uid: str, data: list) -> tuple[bool, str | None]:
         return True, None
     except Exception as e:
         return False, str(e)
-
-
-# ─────────────────────────────────────────────
-# Marketaux 키
-# ─────────────────────────────────────────────
-
-def load_marketaux_key(uid: str) -> tuple[str | None, str | None]:
-    keys, err = _load_keys_dict(uid)
-    return keys.get("marketaux"), err
-
-def save_marketaux_key(uid: str, key: str) -> tuple[bool, str | None]:
-    keys, _ = _load_keys_dict(uid)
-    keys["marketaux"] = key
-    return _save_keys_dict(uid, keys)
-
-def delete_marketaux_key(uid: str) -> tuple[bool, str | None]:
-    keys, _ = _load_keys_dict(uid)
-    keys.pop("marketaux", None)
-    return _save_keys_dict(uid, keys)
 
 
 # ─────────────────────────────────────────────

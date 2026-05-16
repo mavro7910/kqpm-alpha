@@ -6,13 +6,15 @@ import streamlit as st
 from core.portfolio import Portfolio
 from core.secrets_store import (
     load_api_key, save_api_key, delete_api_key,
-    load_finnhub_key, save_finnhub_key, delete_finnhub_key,
-    load_marketaux_key, save_marketaux_key, delete_marketaux_key,
+    load_naver_keys, save_naver_keys, delete_naver_keys,
+    load_dart_key, save_dart_key, delete_dart_key,
 )
 from utils.ai_client import (
     set_api_key, get_api_key, has_api_key, clear_api_key, validate_api_key,
-    set_finnhub_key, get_finnhub_key, has_finnhub_key, clear_finnhub_key, validate_finnhub_key,
-    set_marketaux_key, get_marketaux_key, has_marketaux_key, clear_marketaux_key, validate_marketaux_key,
+    get_naver_client_id, set_naver_client_id,
+    get_naver_client_secret, set_naver_client_secret,
+    has_naver_keys, clear_naver_keys, validate_naver_keys,
+    get_dart_key, set_dart_key, has_dart_key, clear_dart_key, validate_dart_key,
 )
 from utils.ui import section_title, banner, TEAL, TEXT, TEXT_SUB, TEXT_MUTED, BORDER, SURFACE
 
@@ -68,12 +70,13 @@ def render(portfolio: Portfolio, user_email: str, user_name: str, file_key: str)
         stored_key, err = load_api_key(file_key)
         if stored_key: set_api_key(stored_key)
         elif err: st.warning(f"Gemini 키 자동 로드 실패: {err}")
-    if not has_finnhub_key():
-        stored_fh, _ = load_finnhub_key(file_key)
-        if stored_fh: set_finnhub_key(stored_fh)
-    if not has_marketaux_key():
-        stored_mx, _ = load_marketaux_key(file_key)
-        if stored_mx: set_marketaux_key(stored_mx)
+    if not has_naver_keys():
+        (client_id, client_secret), _ = load_naver_keys(file_key)
+        if client_id: set_naver_client_id(client_id)
+        if client_secret: set_naver_client_secret(client_secret)
+    if not has_dart_key():
+        stored_dart, _ = load_dart_key(file_key)
+        if stored_dart: set_dart_key(stored_dart)
 
     # 상태 표시 (HTML 카드)
     def key_status(name, has, get_fn, optional=False):
@@ -84,22 +87,27 @@ def render(portfolio: Portfolio, user_email: str, user_name: str, file_key: str)
             tag = " (선택)" if optional else ""
             return f'<div style="background:#fff8f0;border:0.5px solid rgba(200,120,40,0.28);border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#9a5a18">⚠️ <b>{name}</b>{tag} 키 없음</div>'
 
-    col_g, col_f, col_mx = st.columns(3)
+    col_g, col_n, col_d = st.columns(3)
     with col_g:  st.markdown(key_status("Gemini",    has_api_key,      get_api_key),          unsafe_allow_html=True)
-    with col_f:  st.markdown(key_status("Finnhub",   has_finnhub_key,  get_finnhub_key),       unsafe_allow_html=True)
-    with col_mx: st.markdown(key_status("Marketaux", has_marketaux_key, get_marketaux_key, True), unsafe_allow_html=True)
+    with col_n:  st.markdown(key_status("Naver Open API", has_naver_keys, get_naver_client_id), unsafe_allow_html=True)
+    with col_d:  st.markdown(key_status("OpenDART", has_dart_key, get_dart_key, True), unsafe_allow_html=True)
 
     # 입력 폼
-    col_k1, col_k2, col_k3 = st.columns(3)
+    col_k1, col_k2 = st.columns(2)
     with col_k1:
         new_gemini = st.text_input("Gemini API 키", type="password", placeholder="AIza...",
                                    help="aistudio.google.com 에서 무료 발급", key="inp_gemini_key")
     with col_k2:
-        new_finnhub = st.text_input("Finnhub API 키", type="password", placeholder="d1abc123...",
-                                    help="finnhub.io/register 에서 무료 발급", key="inp_finnhub_key")
-    with col_k3:
-        new_marketaux = st.text_input("Marketaux API 키 (선택)", type="password",
-                                      placeholder="marketaux 키...", key="inp_marketaux_key")
+        new_dart = st.text_input("OpenDART API 키 (선택)", type="password", placeholder="DART API key",
+                                 help="opendart.fss.or.kr 에서 무료 발급", key="inp_dart_key")
+
+    col_n1, col_n2 = st.columns(2)
+    with col_n1:
+        new_naver_id = st.text_input("Naver Client ID", type="password", placeholder="Client ID",
+                                     help="developers.naver.com > Application > 검색 API", key="inp_naver_client_id")
+    with col_n2:
+        new_naver_secret = st.text_input("Naver Client Secret", type="password",
+                                         placeholder="Client Secret", key="inp_naver_client_secret")
 
     col_save, col_del = st.columns([3,1])
     with col_save:
@@ -113,41 +121,47 @@ def render(portfolio: Portfolio, user_email: str, user_name: str, file_key: str)
                     if ok: saved.append("Gemini")
                     else: errors.append(f"Gemini 저장 실패: {se}")
                 else: errors.append(f"Gemini: {err}")
-            if new_finnhub.strip():
-                valid_fh, err_fh = validate_finnhub_key(new_finnhub.strip())
-                if valid_fh:
-                    set_finnhub_key(new_finnhub.strip())
-                    ok_fh, se_fh = save_finnhub_key(file_key, new_finnhub.strip())
-                    if ok_fh: saved.append("Finnhub")
-                    else: errors.append(f"Finnhub 저장 실패: {se_fh}")
-                else: errors.append(f"Finnhub: {err_fh}")
-            if new_marketaux.strip():
-                valid_mx, err_mx = validate_marketaux_key(new_marketaux.strip())
-                if valid_mx:
-                    set_marketaux_key(new_marketaux.strip())
-                    ok_mx, se_mx = save_marketaux_key(file_key, new_marketaux.strip())
-                    if ok_mx: saved.append("Marketaux")
-                    else: errors.append(f"Marketaux 저장 실패: {se_mx}")
-                else: errors.append(f"Marketaux: {err_mx}")
+            if new_naver_id.strip() or new_naver_secret.strip():
+                valid_nv, err_nv = validate_naver_keys(new_naver_id.strip(), new_naver_secret.strip())
+                if valid_nv:
+                    set_naver_client_id(new_naver_id.strip())
+                    set_naver_client_secret(new_naver_secret.strip())
+                    ok_nv, se_nv = save_naver_keys(file_key, new_naver_id.strip(), new_naver_secret.strip())
+                    if ok_nv: saved.append("Naver")
+                    else: errors.append(f"Naver 저장 실패: {se_nv}")
+                else: errors.append(f"Naver: {err_nv}")
+            if new_dart.strip():
+                valid_dart, err_dart = validate_dart_key(new_dart.strip())
+                if valid_dart:
+                    set_dart_key(new_dart.strip())
+                    ok_dart, se_dart = save_dart_key(file_key, new_dart.strip())
+                    if ok_dart: saved.append("OpenDART")
+                    else: errors.append(f"OpenDART 저장 실패: {se_dart}")
+                else: errors.append(f"OpenDART: {err_dart}")
 
-            if not any([new_gemini.strip(), new_finnhub.strip(), new_marketaux.strip()]):
+            if not any([new_gemini.strip(), new_naver_id.strip(), new_naver_secret.strip(), new_dart.strip()]):
                 st.error("키를 하나 이상 입력하세요.")
             else:
                 if saved:   st.session_state["key_save_msg"] = ("success", f"✅ {', '.join(saved)} 키 저장 완료!")
                 if errors:  st.session_state["key_save_msg"] = ("error", "\n".join(errors))
                 st.rerun()
     with col_del:
-        if has_api_key() or has_finnhub_key() or has_marketaux_key():
+        if has_api_key() or has_naver_keys() or has_dart_key():
             if st.button("🗑️ 전체 삭제", key="btn_del_keys", width="stretch"):
-                for fn in [clear_api_key, clear_finnhub_key, clear_marketaux_key]: fn()
-                for fn in [delete_api_key, delete_finnhub_key, delete_marketaux_key]: fn(file_key)
+                clear_api_key()
+                clear_naver_keys()
+                clear_dart_key()
+                delete_api_key(file_key)
+                delete_naver_keys(file_key)
+                delete_dart_key(file_key)
                 st.rerun()
 
     st.markdown(banner(
         '🔒 키는 암호화되어 안전하게 저장됩니다.<br>'
         f'· <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:{TEAL}">Gemini 발급</a>'
-        f' &nbsp;·&nbsp; <a href="https://finnhub.io/register" target="_blank" style="color:{TEAL}">Finnhub 발급</a>'
-        f' &nbsp;·&nbsp; <a href="https://www.marketaux.com/register" target="_blank" style="color:{TEAL}">Marketaux 발급</a>', "info"
+        f' &nbsp;·&nbsp; <a href="https://developers.naver.com/docs/serviceapi/search/news/news.md" target="_blank" style="color:{TEAL}">Naver 검색 API 발급</a><br>'
+        f'· <a href="https://opendart.fss.or.kr/" target="_blank" style="color:{TEAL}">OpenDART 발급</a><br>'
+        '시세/백테스트 데이터는 별도 키 없이 Naver Finance에서 가져옵니다.', "info"
     ), unsafe_allow_html=True)
 
     # ── JSON 내보내기/불러오기 ────────────────────────────

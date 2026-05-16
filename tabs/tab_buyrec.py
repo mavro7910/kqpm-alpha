@@ -115,6 +115,7 @@ def render(portfolio: Portfolio):
         shr = safe_get(buy_shares, t)
         c   = _colors[i % len(_colors)]
         logo_url = portfolio.get_logo(t)
+        name = portfolio.get_name(t) or t
         if logo_url:
             icon_html = (
                 f'<div style="width:32px;height:32px;border-radius:9px;background:#F7F8FA;overflow:hidden;'
@@ -135,8 +136,8 @@ def render(portfolio: Portfolio):
      gap:10px;align-items:center;padding:10px 0;border-bottom:0.5px solid rgba(15,110,86,0.08)">
   {icon_html}
   <div>
-    <div style="font-size:13.5px;font-weight:600;color:{TEXT}">{t}</div>
-    <div style="font-size:11px;color:{TEXT_MUTED};margin-top:1px">#{i+1} · {int(shr):,}주</div>
+    <div style="font-size:13.5px;font-weight:600;color:{TEXT}">{name}</div>
+    <div style="font-size:11px;color:{TEXT_MUTED};margin-top:1px">#{i+1} · {t} · {int(shr):,}주</div>
   </div>
   <div style="font-size:13px;font-weight:600;color:{TEAL};text-align:right">{w:.1f}%</div>
   <div class="qpm-rec-amount" style="font-size:12px;color:{TEXT_SUB};text-align:right">₩{krw:,.0f}</div>
@@ -167,7 +168,7 @@ def render(portfolio: Portfolio):
         for t in tickers_r:
             try: p = float(prices_r[t])
             except: p = None
-            rows.append({"티커":t, "목표 비중(%)":safe_get(weights,t)*100,
+            rows.append({"종목명": portfolio.get_name(t) or t, "티커":t, "목표 비중(%)":safe_get(weights,t)*100,
                           "현재가(KRW)":p, "권장 매수금액(KRW)":safe_get(buy_krw,t),
                           "미집행 예산(KRW)":max(safe_get(buy_extra,t) - safe_get(buy_krw,t), 0.0),
                           "매수 수량":safe_get(buy_shares,t)})
