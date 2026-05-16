@@ -5,6 +5,8 @@ utils/ui.py — QPM Alpha HTML 컴포넌트 헬퍼
 시안 그대로 재현하는 HTML 빌딩 블록
 """
 
+from html import escape
+
 # ── 색상 팔레트 ─────────────────────────────────────────
 TEAL        = "#1457A8"
 TEAL_DARK   = "#0B3466"
@@ -30,6 +32,20 @@ def section_title(text: str) -> str:
         f'<div style="font-size:0.7rem;font-weight:700;color:{TEXT_MUTED};'
         f'text-transform:uppercase;letter-spacing:0.8px;margin:18px 0 8px 0">'
         f'{text}</div>'
+    )
+
+
+def naver_item_url(ticker: str) -> str:
+    return f"https://finance.naver.com/item/main.naver?code={escape(str(ticker), quote=True)}"
+
+
+def stock_link(ticker: str, label: str | None = None, class_name: str = "") -> str:
+    cls = f' class="{class_name}"' if class_name else ""
+    safe_label = escape(label or str(ticker))
+    safe_ticker = escape(str(ticker))
+    return (
+        f'<a{cls} href="{naver_item_url(ticker)}" target="_blank" rel="noopener noreferrer" '
+        f'title="Naver Finance에서 {safe_ticker} 보기">{safe_label}</a>'
     )
 
 
@@ -431,6 +447,19 @@ div[data-testid="column"]:has(.stButton) .stButton {{ margin-bottom:0 !important
     font-weight: 600;
     color: {TEXT};
 }}
+.qpm-stock-ticker a,
+.qpm-rec-name,
+.qpm-trade-ticker a {{
+    color: inherit !important;
+    text-decoration: none !important;
+}}
+.qpm-stock-ticker a:hover,
+.qpm-rec-name:hover,
+.qpm-trade-ticker a:hover {{
+    color: {TEAL} !important;
+    text-decoration: underline !important;
+    text-underline-offset: 3px;
+}}
 .qpm-stock-shares {{
     font-size: 12px;
     color: {TEXT_SUB};
@@ -489,6 +518,21 @@ header    {{ visibility:hidden; }}
     .qpm-metric-grid {{ grid-template-columns: 1fr 1fr !important; }}
     .qpm-form-row    {{ grid-template-columns: 1fr !important; }}
     .qpm-rec-amount  {{ display:none !important; }}
+    .qpm-app-header {{
+        align-items: flex-start !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        padding-bottom: 14px !important;
+    }}
+    .qpm-logo img {{
+        width: 34px !important;
+        height: 34px !important;
+    }}
+    .qpm-user-pill {{
+        max-width: 100% !important;
+        width: 100% !important;
+        justify-content: flex-start !important;
+    }}
     .stTabs [data-baseweb="tab"] {{
         padding: 9px 10px !important;
         font-size: 0.86rem !important;
@@ -516,6 +560,7 @@ header    {{ visibility:hidden; }}
     .stButton > button {{
         font-size: 0.93rem !important;
         min-height: 44px !important;
+        width: 100% !important;
     }}
     .qpm-total-value {{
         font-size: 2.28rem;
@@ -559,8 +604,6 @@ header    {{ visibility:hidden; }}
         overflow: hidden;
         text-overflow: ellipsis;
     }}
-    .qpm-app-header {{ align-items:flex-start; flex-direction:column; }}
-    .qpm-user-pill {{ max-width:100%; }}
 }}
 </style>
 """

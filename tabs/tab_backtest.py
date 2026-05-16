@@ -66,7 +66,7 @@ def render(portfolio: Portfolio):
         bm_input = st.text_input("벤치마크 티커 (쉼표 구분)", value=", ".join(portfolio.benchmarks))
     with col_run2:
         st.markdown('<div style="height:1.6rem"></div>', unsafe_allow_html=True)
-        run_bt = st.button("▶ 백테스트 실행", key="btn_bt", type="primary")
+        run_bt = st.button("▶ 백테스트 실행", key="btn_bt", type="primary", width="stretch")
 
     custom_start = custom_end = None
     if period_label == "직접 입력":

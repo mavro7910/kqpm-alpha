@@ -10,10 +10,11 @@ Cloud 실행 → Supabase DB 저장/로드 (영구 보존)
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import streamlit as st
+
+from core.data import is_krx_ticker, looks_broken_korean, normalize_kr_ticker
 
 
 # ─────────────────────────────────────────────
@@ -62,6 +63,10 @@ _DEFAULTS = {
     },
 }
 
+SCHEMA_VERSION = 2
+DATA_SOURCE = "naver_finance"
+MARKET = "KRX"
+
 
 class Portfolio:
     def __init__(self, path: Path):
@@ -70,6 +75,8 @@ class Portfolio:
         self._uid = path.stem.replace("portfolio_", "")  # 파일명에서 uid 추출
         self._data: dict = {}
         self._load()
+        if self._normalize_data():
+            self.save()
 
     # ── 내부 로드/저장 ────────────────────────────────────────────
 
@@ -102,6 +109,73 @@ class Portfolio:
             except Exception:
                 pass
         return dict(_DEFAULTS)
+
+    def _normalize_data(self) -> bool:
+        """Bring older local/Supabase blobs in line with the KRX/Naver schema."""
+        before = json.dumps(self._data, ensure_ascii=False, sort_keys=True, default=str)
+        if not isinstance(self._data, dict):
+            self._data = {}
+
+        raw_holdings = self._data.get("holdings", {})
+        if not isinstance(raw_holdings, dict):
+            raw_holdings = {}
+        holdings = {}
+        for ticker, shares in raw_holdings.items():
+            symbol = normalize_kr_ticker(ticker)
+            if not is_krx_ticker(symbol):
+                continue
+            try:
+                holdings[symbol] = float(shares)
+            except (TypeError, ValueError):
+                holdings[symbol] = 0.0
+        self._data["holdings"] = holdings or dict(_DEFAULTS["holdings"])
+
+        symbols = set(self._data["holdings"])
+
+        raw_benchmarks = self._data.get("benchmarks", _DEFAULTS["benchmarks"])
+        if not isinstance(raw_benchmarks, list):
+            raw_benchmarks = _DEFAULTS["benchmarks"]
+        benchmarks = []
+        for ticker in raw_benchmarks:
+            symbol = normalize_kr_ticker(ticker)
+            if is_krx_ticker(symbol) and symbol not in benchmarks:
+                benchmarks.append(symbol)
+        self._data["benchmarks"] = benchmarks or list(_DEFAULTS["benchmarks"])
+        symbols.update(self._data["benchmarks"])
+
+        settings = self._data.get("settings", {})
+        if not isinstance(settings, dict):
+            settings = {}
+        merged_settings = dict(_DEFAULTS["settings"])
+        merged_settings.update(settings)
+        self._data["settings"] = merged_settings
+
+        raw_names = self._data.get("names", {})
+        if not isinstance(raw_names, dict):
+            raw_names = {}
+        names = {}
+        for ticker, name in raw_names.items():
+            symbol = normalize_kr_ticker(ticker)
+            if symbol in symbols and name and not looks_broken_korean(str(name)):
+                names[symbol] = str(name).strip()
+        self._data["names"] = names
+
+        raw_logos = self._data.get("logos", {})
+        if not isinstance(raw_logos, dict):
+            raw_logos = {}
+        logos = {}
+        for ticker, url in raw_logos.items():
+            symbol = normalize_kr_ticker(ticker)
+            if symbol in symbols and isinstance(url, str) and url.startswith(("http://", "https://")):
+                logos[symbol] = url
+        self._data["logos"] = logos
+
+        self._data["schema_version"] = SCHEMA_VERSION
+        self._data["data_source"] = DATA_SOURCE
+        self._data["market"] = MARKET
+
+        after = json.dumps(self._data, ensure_ascii=False, sort_keys=True, default=str)
+        return after != before
 
     def save(self):
         """Supabase 우선, 없으면 로컬 파일에 저장."""
@@ -150,16 +224,27 @@ class Portfolio:
 
     @benchmarks.setter
     def benchmarks(self, value: list):
-        self._data["benchmarks"] = value
+        cleaned = []
+        for ticker in value:
+            symbol = normalize_kr_ticker(ticker)
+            if is_krx_ticker(symbol) and symbol not in cleaned:
+                cleaned.append(symbol)
+        self._data["benchmarks"] = cleaned or list(_DEFAULTS["benchmarks"])
 
     def tickers(self) -> list:
         return list(self.holdings.keys())
 
     def set_holding(self, ticker: str, shares: float):
-        self._data.setdefault("holdings", {})[ticker] = shares
+        symbol = normalize_kr_ticker(ticker)
+        if not is_krx_ticker(symbol):
+            raise ValueError("국내 종목/ETF 6자리 티커를 입력하세요.")
+        self._data.setdefault("holdings", {})[symbol] = shares
 
     def remove_holding(self, ticker: str):
-        self._data.setdefault("holdings", {}).pop(ticker, None)
+        symbol = normalize_kr_ticker(ticker)
+        self._data.setdefault("holdings", {}).pop(symbol, None)
+        self._data.setdefault("names", {}).pop(symbol, None)
+        self._data.setdefault("logos", {}).pop(symbol, None)
 
     # ── 설정값 ────────────────────────────────────────────────────
 
@@ -180,11 +265,11 @@ class Portfolio:
         return self._data.setdefault("logos", {})
 
     def get_logo(self, ticker: str) -> str | None:
-        return self.logos.get(ticker)
+        return self.logos.get(normalize_kr_ticker(ticker))
 
     def set_logo(self, ticker: str, url: str | None):
         if url:
-            self.logos[ticker] = url
+            self.logos[normalize_kr_ticker(ticker)] = url
 
     # ── 종목명 캐시 ──────────────────────────────────────────────────
 
@@ -193,8 +278,17 @@ class Portfolio:
         return self._data.setdefault("names", {})
 
     def get_name(self, ticker: str) -> str | None:
-        return self.names.get(ticker)
+        symbol = normalize_kr_ticker(ticker)
+        name = self.names.get(symbol)
+        if looks_broken_korean(name):
+            self.names.pop(symbol, None)
+            return None
+        return name
 
     def set_name(self, ticker: str, name: str | None):
-        if name:
-            self.names[ticker] = name
+        if name and not looks_broken_korean(name):
+            self.names[normalize_kr_ticker(ticker)] = name
+
+    def replace_data(self, data: dict):
+        self._data = data if isinstance(data, dict) else {}
+        self._normalize_data()

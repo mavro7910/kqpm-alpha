@@ -39,7 +39,7 @@ def render(portfolio: Portfolio, user_email: str, user_name: str, file_key: str)
         new_top_n  = st.number_input("기본 추천 종목 수 (Top N)", min_value=1,
                                      max_value=_max_n_cfg, value=min(_saved_n,_max_n_cfg), step=1)
 
-    if st.button("💾 설정 저장", key="btn_save_settings"):
+    if st.button("💾 설정 저장", key="btn_save_settings", width="stretch"):
         portfolio.weekly_budget = new_budget
         bms = [b.strip().upper() for b in new_bm.split(",") if b.strip()]
         if not bms:
@@ -182,7 +182,7 @@ def render(portfolio: Portfolio, user_email: str, user_name: str, file_key: str)
                 if not isinstance(data, dict) or "holdings" not in data:
                     st.error("올바른 portfolio.json 형식이 아닙니다.")
                 else:
-                    portfolio._data = data
+                    portfolio.replace_data(data)
                     portfolio.save()
                     for k in ("prices_data","buy_result","bt_result"):
                         st.session_state.pop(k, None)

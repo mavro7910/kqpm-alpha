@@ -1,4 +1,7 @@
 {
+  "schema_version": 2,
+  "data_source": "naver_finance",
+  "market": "KRX",
   "holdings": {
     "005930": 0,
     "000660": 0,
@@ -12,5 +15,19 @@
     "069500",
     "229200"
   ],
-  "weekly_budget": 100000
+  "weekly_budget": 100000,
+  "settings": {
+    "top_n": 10,
+    "ai_provider": "gemini",
+    "signal_lang": "ko",
+    "buy_use_mcap": true,
+    "bt_period": "3년",
+    "sell_top_n": 15,
+    "sell_use_mcap": true,
+    "rebal_top_n": 15,
+    "rebal_use_mcap": true,
+    "auto_refresh_prices": false
+  },
+  "names": {},
+  "logos": {}
 }

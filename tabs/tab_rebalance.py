@@ -6,7 +6,7 @@ import streamlit as st
 
 from core.portfolio import Portfolio
 from core.strategy import rebalance_weights
-from utils.ui import section_title, banner, metric_card, badge, TEAL, TEAL_DARK, TEAL_LIGHT, TEXT, TEXT_SUB, TEXT_MUTED, BORDER, SURFACE
+from utils.ui import section_title, banner, metric_card, badge, stock_link, TEAL, TEAL_DARK, TEAL_LIGHT, TEXT, TEXT_SUB, TEXT_MUTED, BORDER, SURFACE
 from utils.plotly_theme import TEAL, FONT_COLOR, TICK_COLOR
 
 _PRESET_LABELS = {
@@ -52,7 +52,7 @@ def render(portfolio: Portfolio):
         )
     with col_rb3:
         st.markdown('<div style="height:1.6rem"></div>', unsafe_allow_html=True)
-        run_rebal = st.button("🔄 리밸런싱 계산 실행", key="btn_rebal", type="primary")
+        run_rebal = st.button("🔄 리밸런싱 계산 실행", key="btn_rebal", type="primary", width="stretch")
 
     if run_rebal:
         portfolio.set_setting("rebal_mcap_preset", rb_mcap_preset)
@@ -345,6 +345,7 @@ def render(portfolio: Portfolio):
                 shares = abs(int(row["조정 수량"]))
                 ticker = row["티커"]
                 display_name = row.get("종목명") or ticker
+                display_link = stock_link(ticker, display_name)
                 logo_url = portfolio.get_logo(ticker)
                 if logo_url:
                     icon_html = (
@@ -360,7 +361,7 @@ def render(portfolio: Portfolio):
 <div class="qpm-trade-card">
   {icon_html}
   <div style="min-width:0">
-    <div class="qpm-trade-ticker">{display_name}</div>
+    <div class="qpm-trade-ticker">{display_link}</div>
     <div class="qpm-trade-meta">{ticker} · 현재 {current_w:.1f}% → 목표 {target_w:.1f}%</div>
     <div class="qpm-weight-bar">
       <span class="qpm-weight-current" style="width:{current_bar:.1f}%"></span>

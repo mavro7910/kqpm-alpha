@@ -1,6 +1,7 @@
 ﻿"""tabs/tab_portfolio.py — 보유 종목 관리 탭"""
 
 import base64, json, re, hashlib as _hashlib
+from html import unescape
 import pandas as pd
 import streamlit as st
 
@@ -10,6 +11,7 @@ from utils.ai_client import get_api_key, has_api_key
 from utils.ui import (
     section_title, metric_card, banner, TEAL, TEAL_LIGHT, TEAL_DARK,
     TEXT, TEXT_SUB, TEXT_MUTED, BORDER, SURFACE, SURFACE_DIM, RED, RED_LIGHT,
+    stock_link,
 )
 
 _KR_TICKER_HINTS = {
@@ -36,6 +38,12 @@ _BROKEN_KR_MARKERS = ("�", "醫", "怨", "嫄", "吏", "媛", "?좎", "?쒓", 
 
 def _looks_broken_kr(text: str | None) -> bool:
     return bool(text and any(marker in text for marker in _BROKEN_KR_MARKERS))
+
+
+def _plain_stock_name(value: str | None, fallback: str) -> str:
+    text = re.sub(r"<[^>]*>", "", str(value or ""))
+    text = unescape(re.sub(r"\s+", " ", text)).strip()
+    return text if text and not _looks_broken_kr(text) else fallback
 
 
 def _ticker_color(ticker: str, idx: int) -> str:
@@ -257,7 +265,7 @@ def render(portfolio: Portfolio):
     st.markdown('<div class="qpm-update-bar-label">데이터</div>', unsafe_allow_html=True)
     col_btn_ref, col_btn_name, col_auto = st.columns([1, 1, 1.15], gap="small")
     with col_btn_ref:
-        if st.button("시세 갱신", key="btn_refresh", type="primary"):
+        if st.button("시세 갱신", key="btn_refresh", type="primary", width="stretch"):
             with st.spinner("시세 가져오는 중..."):
                 try:
                     prices, fx_new, fx_est_new = fetch_prices_and_fx(portfolio.tickers())
@@ -266,7 +274,7 @@ def render(portfolio: Portfolio):
                 except Exception as e:
                     st.error(f"시세 조회 실패: {e}")
     with col_btn_name:
-        if st.button("종목명 조회", key="btn_names"):
+        if st.button("종목명 조회", key="btn_names", width="stretch"):
             with st.spinner("종목명 가져오는 중..."):
                 names = {}
                 for t in portfolio.tickers():
@@ -329,7 +337,8 @@ def render(portfolio: Portfolio):
 """, unsafe_allow_html=True)
 
     # ── 종목 리스트 (HTML) — 상위 3개 + 더보기 ─────────────────
-    names_map = st.session_state.get("ticker_names", portfolio.names)
+    raw_names_map = st.session_state.get("ticker_names", portfolio.names)
+    names_map = {t: _plain_stock_name(raw_names_map.get(t), t) for t in portfolio.tickers()}
     def _holding_value(item):
         t, s = item
         if prices_map is None:
@@ -356,12 +365,13 @@ def render(portfolio: Portfolio):
         name_str  = names_map.get(t, "")
         price_str = f"₩{p:,.0f}" if p else "—"
         val_str   = f"₩{val:,.0f}" if val else "—"
-        display_name = name_str or t
+        display_name = _plain_stock_name(name_str, t)
+        display_link = stock_link(t, display_name)
         return f"""
 <div class="qpm-stock-row">
   {logo_html}
   <div style="flex:1;min-width:0">
-    <div class="qpm-stock-ticker">{display_name}</div>
+    <div class="qpm-stock-ticker">{display_link}</div>
     <div class="qpm-stock-shares">{t} · {int(s):,}주</div>
   </div>
   <div class="qpm-stock-price" style="text-align:right;flex-shrink:0">

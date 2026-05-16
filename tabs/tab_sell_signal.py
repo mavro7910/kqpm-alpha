@@ -56,7 +56,7 @@ def render(portfolio: Portfolio):
         )
     with col_run6:
         st.markdown('<div style="height:1.6rem"></div>', unsafe_allow_html=True)
-        run_sell = st.button("🔍 분석 실행", key="btn_sell_signal", type="primary")
+        run_sell = st.button("🔍 분석 실행", key="btn_sell_signal", type="primary", width="stretch")
 
     if run_sell:
         if not portfolio.tickers():

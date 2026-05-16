@@ -7,6 +7,7 @@ import streamlit as st
 from core.portfolio import Portfolio
 from core.strategy import buy_recommendation
 from utils.ui import section_title, metric_card, banner, badge, TEAL, TEAL_DARK, TEAL_LIGHT, TEXT, TEXT_SUB, TEXT_MUTED, BORDER, SURFACE, GOLD, GOLD_LIGHT, RED
+from utils.ui import stock_link
 from utils.plotly_theme import base_layout, TEAL as PT, BLUE, AMBER
 
 _PRESET_LABELS = {"factor":"순수 팩터","balanced":"균형","mcap":"시총 편향"}
@@ -41,7 +42,7 @@ def render(portfolio: Portfolio):
                                help="\n".join(f"**{_PRESET_LABELS[k]}**: {_PRESET_DESC[k]}" for k in _opts))
     with col_run:
         st.markdown('<div style="height:1.6rem"></div>', unsafe_allow_html=True)
-        run_buy = st.button("▶ 매수 추천 실행", key="btn_buy", type="primary")
+        run_buy = st.button("▶ 매수 추천 실행", key="btn_buy", type="primary", width="stretch")
 
     _max_n    = len(portfolio.tickers()) if portfolio.tickers() else 20
     _saved_n  = portfolio.get_setting("top_n", 10)
@@ -116,6 +117,7 @@ def render(portfolio: Portfolio):
         c   = _colors[i % len(_colors)]
         logo_url = portfolio.get_logo(t)
         name = portfolio.get_name(t) or t
+        name_link = stock_link(t, name, "qpm-rec-name")
         if logo_url:
             icon_html = (
                 f'<div style="width:32px;height:32px;border-radius:9px;background:#F7F8FA;overflow:hidden;'
@@ -136,7 +138,7 @@ def render(portfolio: Portfolio):
      gap:10px;align-items:center;padding:10px 0;border-bottom:0.5px solid rgba(15,110,86,0.08)">
   {icon_html}
   <div>
-    <div style="font-size:13.5px;font-weight:600;color:{TEXT}">{name}</div>
+    <div style="font-size:13.5px;font-weight:600;color:{TEXT}">{name_link}</div>
     <div style="font-size:11px;color:{TEXT_MUTED};margin-top:1px">#{i+1} · {t} · {int(shr):,}주</div>
   </div>
   <div style="font-size:13px;font-weight:600;color:{TEAL};text-align:right">{w:.1f}%</div>

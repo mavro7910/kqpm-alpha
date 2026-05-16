@@ -33,6 +33,19 @@ NAVER_COLUMNS = {
     "외국인소진율": "ForeignRatio",
 }
 
+BROKEN_KR_MARKERS = (
+    "\ufffd",
+    "醫",
+    "怨",
+    "嫄",
+    "吏",
+    "媛",
+    "?좎",
+    "?쒓",
+    "?",
+    "?ㅼ",
+)
+
 _SESSION = requests.Session()
 _SESSION.headers.update(
     {
@@ -45,10 +58,19 @@ _SESSION.headers.update(
 )
 
 
+def looks_broken_korean(text: str | None) -> bool:
+    """Return True when a stored Korean label looks like mojibake."""
+    return bool(text and any(marker in text for marker in BROKEN_KR_MARKERS))
+
+
 def _response_text(res: requests.Response) -> str:
-    """Decode Naver responses using the server-provided charset first."""
-    if not res.encoding:
-        res.encoding = res.apparent_encoding or "utf-8"
+    """Decode Naver responses as UTF-8 unless the server explicitly says otherwise."""
+    content_type = res.headers.get("Content-Type", "")
+    charset_match = re.search(r"charset=([\w-]+)", content_type, re.I)
+    if charset_match:
+        res.encoding = charset_match.group(1)
+    elif not res.encoding or res.encoding.upper() in {"ISO-8859-1", "EUC-KR"}:
+        res.encoding = "utf-8"
     return res.text
 
 
@@ -62,6 +84,10 @@ def normalize_kr_ticker(ticker: str) -> str:
     if raw.isdigit() and 1 <= len(raw) <= 6:
         return raw.zfill(6)
     return raw
+
+
+def is_krx_ticker(ticker: str) -> bool:
+    return bool(re.fullmatch(r"\d{6}", normalize_kr_ticker(ticker)))
 
 
 def _period_start(period: str) -> date:
@@ -90,7 +116,7 @@ def _parse_naver_chart(text: str) -> pd.DataFrame:
     try:
         rows = ast.literal_eval(cleaned)
     except (SyntaxError, ValueError) as exc:
-        raise ValueError("네이버 금융 응답을 해석하지 못했습니다.") from exc
+        raise ValueError("Naver Finance 일봉 응답을 해석하지 못했습니다.") from exc
 
     if not rows or len(rows) < 2:
         return pd.DataFrame()
@@ -132,10 +158,17 @@ def fetch_ohlcv(
         res.raise_for_status()
     except requests.RequestException as exc:
         raise ValueError(
-            f"네이버 금융 시세 조회 실패: {symbol}. 네트워크 또는 네이버 금융 접근 상태를 확인하세요."
+            f"Naver Finance 시세 조회 실패: {symbol}. 네트워크 또는 Naver Finance 접근 상태를 확인하세요."
         ) from exc
 
-    return _parse_naver_chart(res.text)
+    return _parse_naver_chart(_response_text(res))
+
+
+def _clean_name(name: str | None) -> str | None:
+    cleaned = re.sub(r"\s+", " ", unescape(name or "")).strip()
+    if not cleaned or looks_broken_korean(cleaned):
+        return None
+    return cleaned
 
 
 def fetch_name(ticker: str) -> str | None:
@@ -145,14 +178,20 @@ def fetch_name(ticker: str) -> str | None:
         res = _SESSION.get(NAVER_ITEM_URL, params={"code": symbol}, timeout=6)
         res.raise_for_status()
         text = _response_text(res)
-        match = re.search(
+
+        patterns = (
             r'<div class="wrap_company">.*?<h2[^>]*>\s*(?:<a[^>]*>)?\s*(.*?)\s*(?:</a>)?\s*</h2>',
-            text,
-            re.S,
+            r"<title>\s*(.*?)\s*:\s*Npay\s*증권\s*</title>",
+            r"<title>\s*(.*?)\s*:\s*네이버\s*증권\s*</title>",
         )
-        if match:
-            name = re.sub(r"<[^>]+>", "", match.group(1)).strip()
-            return unescape(name) or None
+        for pattern in patterns:
+            match = re.search(pattern, text, re.S | re.I)
+            if not match:
+                continue
+            name = re.sub(r"<[^>]+>", "", match.group(1))
+            cleaned = _clean_name(name)
+            if cleaned:
+                return cleaned
     except Exception:
         return None
     return None
@@ -218,7 +257,7 @@ def fetch_close_matrix(
 
     if not frames:
         detail = "; ".join(errors[:3]) if errors else "데이터 없음"
-        raise ValueError(f"유효한 국장 데이터가 없습니다. {detail}")
+        raise ValueError(f"유효한 국내 시장 데이터가 없습니다. {detail}")
     return pd.concat(frames.values(), axis=1).sort_index()
 
 

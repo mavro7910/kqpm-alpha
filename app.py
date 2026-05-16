@@ -1,6 +1,6 @@
 ﻿"""app.py — QPM Alpha 진입점"""
 
-import hashlib, sys, os
+import base64, hashlib, sys, os
 from pathlib import Path
 
 import streamlit as st
@@ -16,8 +16,12 @@ from tabs import (
 )
 
 _icon_path = Path(os.getcwd()) / "assets" / "icon.png"
-try:    _icon = Image.open(_icon_path).resize((64, 64))
-except: _icon = "📊"
+try:
+    _icon = Image.open(_icon_path).resize((64, 64))
+    _logo_src = "data:image/png;base64," + base64.b64encode(_icon_path.read_bytes()).decode("ascii")
+except Exception:
+    _icon = "📊"
+    _logo_src = ICON_B64
 
 st.set_page_config(
     page_title="KQPM Alpha",
@@ -41,7 +45,7 @@ if not st.user.is_logged_in:
     st.markdown(f"""
 <div style="background:#FFFFFF;border-bottom:0.5px solid {BORDER};
             padding:18px 0 16px;margin-bottom:22px;display:flex;align-items:center;gap:12px">
-  <img src="{ICON_B64}" width="44" height="44"
+  <img src="{_logo_src}" width="44" height="44"
        style="border-radius:10px"
        onerror="this.style.display='none'">
   <div>
@@ -117,7 +121,7 @@ def _save_dark_mode():
 st.markdown(f"""
 <div class="qpm-app-header">
   <div class="qpm-logo">
-    <img src="{ICON_B64}" alt="KQPM" onerror="this.style.display='none'">
+    <img src="{_logo_src}" alt="KQPM" onerror="this.style.display='none'">
     <div>
       <div class="qpm-logo-title">KQPM <span>Alpha</span></div>
       <div class="qpm-logo-subtitle">Korean Quantitative Portfolio Manager</div>
@@ -135,7 +139,7 @@ _hcol1, _hcol2, _hcol3 = st.columns([6, 1.35, 1])
 with _hcol2:
     st.toggle("다크 모드", key="qpm_dark_mode", on_change=_save_dark_mode)
 with _hcol3:
-    if st.button("로그아웃", key="btn_logout"):
+    if st.button("로그아웃", key="btn_logout", width="stretch"):
         st.logout()
 
 # ── 탭 ───────────────────────────────────────────────────
