@@ -1,0 +1,11 @@
+streamlit==1.56.0
+pandas>=2.2.0,<3.0
+numpy>=1.26.0,<2.1
+plotly>=5.22.0
+scipy>=1.13.0
+Pillow>=10.3.0
+requests>=2.32.0
+supabase>=2.0.0
+authlib==1.6.11
+google-generativeai>=0.8.0
+cryptography>=42.0.0
