@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import re
 from datetime import date, timedelta
+from html import unescape
 
 import pandas as pd
 import requests
@@ -42,6 +43,13 @@ _SESSION.headers.update(
         "Referer": "https://finance.naver.com/",
     }
 )
+
+
+def _response_text(res: requests.Response) -> str:
+    """Decode Naver responses using the server-provided charset first."""
+    if not res.encoding:
+        res.encoding = res.apparent_encoding or "utf-8"
+    return res.text
 
 
 def normalize_kr_ticker(ticker: str) -> str:
@@ -136,10 +144,15 @@ def fetch_name(ticker: str) -> str | None:
     try:
         res = _SESSION.get(NAVER_ITEM_URL, params={"code": symbol}, timeout=6)
         res.raise_for_status()
-        res.encoding = "euc-kr"
-        match = re.search(r'<div class="wrap_company">\s*<h2[^>]*>(.*?)</h2>', res.text, re.S)
+        text = _response_text(res)
+        match = re.search(
+            r'<div class="wrap_company">.*?<h2[^>]*>\s*(?:<a[^>]*>)?\s*(.*?)\s*(?:</a>)?\s*</h2>',
+            text,
+            re.S,
+        )
         if match:
-            return re.sub(r"<.*?>", "", match.group(1)).strip()
+            name = re.sub(r"<[^>]+>", "", match.group(1)).strip()
+            return unescape(name) or None
     except Exception:
         return None
     return None
@@ -151,8 +164,7 @@ def fetch_market_cap(ticker: str) -> float | None:
     try:
         res = _SESSION.get(NAVER_ITEM_URL, params={"code": symbol}, timeout=6)
         res.raise_for_status()
-        res.encoding = "euc-kr"
-        text = re.sub(r"\s+", " ", res.text)
+        text = re.sub(r"\s+", " ", _response_text(res))
         match = re.search(
             r"시가총액</em>\s*</th>\s*<td[^>]*>\s*<em[^>]*>([\d,]+)</em>\s*억원",
             text,

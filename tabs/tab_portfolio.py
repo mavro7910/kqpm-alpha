@@ -31,6 +31,12 @@ _FALLBACK_COLORS = [
     "#e05252","#a0b4b2","#3a8fc8","#c96a8b","#6a9e4a",
 ]
 
+_BROKEN_KR_MARKERS = ("�", "醫", "怨", "嫄", "吏", "媛", "?좎", "?쒓", "?", "?ㅼ")
+
+
+def _looks_broken_kr(text: str | None) -> bool:
+    return bool(text and any(marker in text for marker in _BROKEN_KR_MARKERS))
+
 
 def _ticker_color(ticker: str, idx: int) -> str:
     return _TICKER_COLORS.get(ticker, _FALLBACK_COLORS[idx % len(_FALLBACK_COLORS)])
@@ -96,7 +102,8 @@ def render(portfolio: Portfolio):
     def ensure_names():
         updated = False
         for t in portfolio.tickers():
-            if portfolio.get_name(t):
+            current_name = portfolio.get_name(t)
+            if current_name and not _looks_broken_kr(current_name):
                 continue
             name = fetch_name(t)
             if name:
